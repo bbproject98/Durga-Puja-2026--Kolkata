@@ -431,7 +431,13 @@ export async function fetchBookings(): Promise<Booking[]> {
     const res = await authFetch(`${API_BASE_URL}/api/bookings`, { method: "GET" });
     if (res.ok) {
       const json = await res.json();
-      const list: Booking[] = json.data || json || [];
+      const list: Booking[] = Array.isArray(json)
+        ? json
+        : Array.isArray(json.data)
+        ? json.data
+        : Array.isArray(json.bookings)
+        ? json.bookings
+        : [];
       // Sort ASC (earliest travelDate and pickupTime first)
       return sortBookingsAscending(list);
     }
@@ -440,10 +446,11 @@ export async function fetchBookings(): Promise<Booking[]> {
   }
 
   const local = getLocalItem<Booking[]>("broomboom_bookings", DEFAULT_BOOKINGS);
-  return sortBookingsAscending(local);
+  return sortBookingsAscending(Array.isArray(local) ? local : DEFAULT_BOOKINGS);
 }
 
 export function sortBookingsAscending(bookings: Booking[]): Booking[] {
+  if (!Array.isArray(bookings)) return [];
   return [...bookings].sort((a, b) => {
     const dateA = new Date(`${a.travelDate}T${a.pickupTime || "00:00"}`).getTime();
     const dateB = new Date(`${b.travelDate}T${b.pickupTime || "00:00"}`).getTime();
@@ -529,11 +536,13 @@ export async function fetchVehicles(category?: string): Promise<Vehicle[]> {
     const res = await authFetch(`${API_BASE_URL}/api/fleet${query}`, { method: "GET" });
     if (res.ok) {
       const json = await res.json();
-      const raw = json.data || json || [];
-      return raw.map((v: any) => ({
-        ...v,
-        features: Array.isArray(v.features) ? v.features : JSON.parse(v.features || "[]"),
-      }));
+      const raw = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
+      if (raw.length > 0) {
+        return raw.map((v: any) => ({
+          ...v,
+          features: Array.isArray(v.features) ? v.features : JSON.parse(v.features || "[]"),
+        }));
+      }
     }
   } catch {
     // local fallback
@@ -595,11 +604,13 @@ export async function fetchPackages(type?: string): Promise<Package[]> {
     const res = await authFetch(`${API_BASE_URL}/api/packages${query}`, { method: "GET" });
     if (res.ok) {
       const json = await res.json();
-      const raw = json.data || json || [];
-      return raw.map((p: any) => ({
-        ...p,
-        highlights: Array.isArray(p.highlights) ? p.highlights : JSON.parse(p.highlights || "[]"),
-      }));
+      const raw = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
+      if (raw.length > 0) {
+        return raw.map((p: any) => ({
+          ...p,
+          highlights: Array.isArray(p.highlights) ? p.highlights : JSON.parse(p.highlights || "[]"),
+        }));
+      }
     }
   } catch {
     // local fallback
@@ -723,13 +734,21 @@ export async function fetchLeads(): Promise<Lead[]> {
     const res = await authFetch(`${API_BASE_URL}/api/leads`, { method: "GET" });
     if (res.ok) {
       const json = await res.json();
-      return json.data || json || [];
+      const list = Array.isArray(json)
+        ? json
+        : Array.isArray(json.data)
+        ? json.data
+        : Array.isArray(json.leads)
+        ? json.leads
+        : [];
+      if (list.length > 0) return list;
     }
   } catch {
     // local fallback
   }
 
-  return getLocalItem<Lead[]>("broomboom_leads", DEFAULT_LEADS);
+  const local = getLocalItem<Lead[]>("broomboom_leads", DEFAULT_LEADS);
+  return Array.isArray(local) ? local : DEFAULT_LEADS;
 }
 
 export async function updateLeadStatus(id: string, status: string): Promise<Lead> {
