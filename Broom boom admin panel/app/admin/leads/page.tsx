@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { fetchLeads, updateLeadStatus, Lead } from "../lib/api";
+import { fetchLeads, updateLeadStatus, Lead, formatLeadContext, formatLeadAction } from "../lib/api";
 import {
   Search,
   RefreshCw,
@@ -201,7 +201,6 @@ export default function LeadsPage() {
                           </div>
                           <div>
                             <p className="font-semibold text-slate-800">{lead.name}</p>
-                            {lead.context && <p className="text-xs text-slate-400 truncate max-w-[200px]">{lead.context}</p>}
                           </div>
                         </div>
                       </td>
@@ -219,7 +218,7 @@ export default function LeadsPage() {
                       <td className="py-3 px-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                           {getActionIcon(lead.action || "User Login")}
-                          {lead.action || "User Login"}
+                          {formatLeadAction(lead.action)}
                         </span>
                       </td>
                       <td className="py-3 px-4">
@@ -246,7 +245,14 @@ export default function LeadsPage() {
                     {expandedLeadId === lead.id && (
                       <tr>
                         <td colSpan={7} className="px-4 py-4 bg-slate-50/60 border-t border-slate-100">
-
+                          {lead.context && (
+                            <div className="mb-3 text-xs text-slate-600 flex items-center gap-2">
+                              <span className="font-semibold text-slate-700">Inquiry / Source:</span>
+                              <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 font-medium">
+                                {formatLeadContext(lead.context)}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                             <span className="text-xs font-medium text-slate-600">Change Status:</span>
                             <div className="flex flex-wrap gap-2">

@@ -5,6 +5,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   fetchBookings,
+  fetchBookingById,
   updateBooking,
   getAuthToken,
   Booking,
@@ -58,8 +59,7 @@ export default function EditBookingPage() {
     const load = async () => {
       setLoading(true);
       try {
-        const all = await fetchBookings();
-        const found = all.find((b) => b.id === id || b.bookingId === id);
+        const found = await fetchBookingById(id);
         if (found) {
           const fare = Number(found.fare ?? found.totalTariff ?? 0);
           const advance = Number(found.advanceAmount ?? found.advancePaid ?? Math.round(fare * 0.25));

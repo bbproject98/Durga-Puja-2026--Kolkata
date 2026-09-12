@@ -13,6 +13,7 @@ import {
   Vehicle,
   Package,
   Lead,
+  formatLeadAction,
 } from "./lib/api";
 import {
   IndianRupee,
@@ -282,11 +283,6 @@ export default function AdminDashboardPage() {
                         </div>
                         <div>
                           <p className="font-bold text-slate-900 text-xs">{lead.name}</p>
-                          {lead.context && (
-                            <p className="text-[10px] text-slate-400 truncate max-w-[180px]">
-                              {lead.context}
-                            </p>
-                          )}
                         </div>
                       </div>
                     </td>
@@ -322,15 +318,15 @@ export default function AdminDashboardPage() {
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
                           lead.action === "User Login"
                             ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : lead.action === "Book Package"
+                            : lead.action === "Book Package" || lead.action === "book"
                             ? "bg-amber-50 text-amber-800 border border-amber-200"
-                            : lead.action === "Explore Fleet" || lead.action === "Explore Outstation"
+                            : lead.action === "Explore Fleet" || lead.action === "Explore Outstation" || lead.action === "explore"
                             ? "bg-blue-50 text-blue-700 border border-blue-200"
                             : "bg-purple-50 text-purple-700 border border-purple-200"
                         }`}
                       >
                         <Activity className="w-3 h-3 shrink-0" />
-                        <span>{lead.action || "User Login"}</span>
+                        <span>{formatLeadAction(lead.action)}</span>
                       </span>
                     </td>
 
@@ -444,7 +440,7 @@ export default function AdminDashboardPage() {
                         <Clock className="w-4 h-4 text-amber-600" />
                         <div>
                           <p className="font-semibold text-xs">{b.travelDate}</p>
-                          <p className="text-[11px] text-slate-500">{b.pickupTime} hrs</p>
+                          <p className="text-[11px] text-slate-500">{b.pickupTime ? (b.pickupTime.toLowerCase().includes("m") ? b.pickupTime : `${b.pickupTime} hrs`) : "N/A"}</p>
                         </div>
                       </div>
                     </td>

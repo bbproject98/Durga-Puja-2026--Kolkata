@@ -54,8 +54,12 @@ export default function AdminLoginPage() {
         <div className="bg-white rounded-3xl p-8 sm:p-10 shadow-2xl border border-slate-200/80">
           {/* Logo & Brand Header */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500 text-navy-950 font-black text-xl mb-4 shadow-lg shadow-amber-500/30">
-              BBC
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full overflow-hidden mb-4 shadow-xl shadow-amber-500/25 border-2 border-amber-400/40 bg-amber-500">
+              <img
+                src="/logo.png"
+                alt="BroomBoom Cabs"
+                className="w-full h-full object-cover"
+              />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
               BroomBoom Cabs

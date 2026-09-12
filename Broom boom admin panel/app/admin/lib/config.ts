@@ -2,7 +2,7 @@
  * BroomBoom Admin Panel Configuration
  */
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://durgapuja.broomboomcabs.com";
 
 export const APP_CONFIG = {
   name: "BroomBoom Cabs",

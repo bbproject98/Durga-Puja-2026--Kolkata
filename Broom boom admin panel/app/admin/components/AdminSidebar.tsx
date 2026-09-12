@@ -17,6 +17,14 @@ import {
 import { removeAuthToken, getStoredAdminUser } from "../lib/api";
 import { useNotifications } from "../context/NotificationContext";
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elementName: string]: any;
+    }
+  }
+}
+
 interface AdminSidebarProps {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -97,8 +105,12 @@ export default function AdminSidebar({
         {/* Brand Header */}
         <div className="p-6 border-b border-navy-800 flex items-center justify-between">
           <Link href="/admin" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-navy-950 font-black flex items-center justify-center text-base tracking-wider shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform">
-              BBC
+            <div className="w-11 h-11 rounded-full overflow-hidden bg-amber-500 shrink-0 shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform flex items-center justify-center border-2 border-amber-400/40">
+              <img
+                src="/logo.png"
+                alt="BroomBoom Cabs"
+                className="w-full h-full object-cover"
+              />
             </div>
             <div>
               <div className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
@@ -174,7 +186,7 @@ export default function AdminSidebar({
           </div>
 
           <a
-            href="http://localhost:3000"
+            href="http://durgapuja-admin.broomboomcabs.com"
             target="_blank"
             rel="noreferrer"
             className="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-amber-400 hover:bg-navy-800/60 transition-colors"
@@ -183,7 +195,7 @@ export default function AdminSidebar({
               <ExternalLink className="w-4 h-4" />
               <span>Customer Website</span>
             </div>
-            <span className="text-[10px] text-slate-500 font-mono">:3000</span>
+            <span className="text-[10px] text-slate-500 font-mono"></span>
           </a>
         </div>
 

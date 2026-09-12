@@ -4,6 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "BroomBoom Cabs — Admin Management Console",
   description: "Administrative console for managing bookings, fleet, and rental packages for BroomBoom Cabs Kolkata.",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

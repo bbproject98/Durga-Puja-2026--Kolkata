@@ -89,6 +89,47 @@ export interface Lead {
   createdAt: string;
 }
 
+export function formatLeadContext(context?: string | null): string {
+  if (!context) return "";
+  let clean = context.trim();
+
+  // Remove trailing internal IDs like "(pkg_10hr_100km)"
+  clean = clean.replace(/\s*\([a-zA-Z0-9_-]+\)\s*$/, "");
+
+  // Clean up duplicate prefixes like "Rental Package: 10 Hours / 100 KMs Rental Package"
+  clean = clean.replace(/^Rental Package:\s*/i, "");
+
+  // Map known button tracking strings to human-friendly labels
+  if (/banner\s+primary\s+book\s+button/i.test(clean)) {
+    return "Hero Banner Booking";
+  }
+  if (/sticky\s+mobile\s+bar\s+booking/i.test(clean)) {
+    return "Mobile Quick Booking";
+  }
+  if (/main\s+navigation\s+booking/i.test(clean)) {
+    return "Navbar Booking";
+  }
+  if (/mobile\s+nav\s+booking/i.test(clean)) {
+    return "Mobile Menu Booking";
+  }
+  if (/about\s+section/i.test(clean)) {
+    return "Large Fleet Request";
+  }
+
+  // Remove dangling "Button" word at end if any
+  clean = clean.replace(/\s+button$/i, "");
+
+  return clean;
+}
+
+export function formatLeadAction(action?: string | null): string {
+  if (!action) return "User Login";
+  const a = action.toLowerCase().trim();
+  if (a === "book") return "Book Package";
+  if (a === "explore") return "Explore Route";
+  return action;
+}
+
 export interface AdminUser {
   id: string;
   name: string;
@@ -424,6 +465,76 @@ export async function authFetch(url: string, options: RequestInit = {}) {
 }
 
 // -------------------------------------------------------------
+// Date Parser & Ascending Sorter for Durga Puja Bookings
+// -------------------------------------------------------------
+const MONTH_MAP: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+export function parseBookingDateTime(b: Booking): number {
+  if (!b) return NaN;
+  const dateStr = (b.travelDate || "").trim();
+  const timeStr = (b.pickupTime || "00:00").trim();
+
+  // 1. Try direct parse if standard ISO or standard date format
+  if (dateStr) {
+    const direct = new Date(`${dateStr} ${timeStr}`).getTime();
+    if (!isNaN(direct)) return direct;
+  }
+
+  // 2. Try regex extraction for text dates like "Oct 16 (Maha Saptami)"
+  const monthMatch = dateStr.match(
+    /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2})/i
+  );
+  if (monthMatch) {
+    const monthKey = monthMatch[1].toLowerCase();
+    const monthIndex = MONTH_MAP[monthKey] ?? 9;
+    const day = parseInt(monthMatch[2], 10);
+    const year = 2026;
+
+    let hours = 0;
+    let minutes = 0;
+    const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (timeMatch) {
+      hours = parseInt(timeMatch[1], 10);
+      minutes = parseInt(timeMatch[2], 10);
+      if (timeMatch[3]) {
+        const ampm = timeMatch[3].toUpperCase();
+        if (ampm === "PM" && hours < 12) hours += 12;
+        if (ampm === "AM" && hours === 12) hours = 0;
+      }
+    }
+    const d = new Date(year, monthIndex, day, hours, minutes);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+
+  // 3. Fallback to createdAt timestamp
+  if (b.createdAt) {
+    const c = new Date(b.createdAt).getTime();
+    if (!isNaN(c)) return c;
+  }
+
+  return NaN;
+}
+
+export function sortBookingsAscending(bookings: Booking[]): Booking[] {
+  if (!Array.isArray(bookings)) return [];
+  return [...bookings].sort((a, b) => {
+    const timeA = parseBookingDateTime(a);
+    const timeB = parseBookingDateTime(b);
+    if (isNaN(timeA) && isNaN(timeB)) {
+      const cA = new Date(a.createdAt || 0).getTime();
+      const cB = new Date(b.createdAt || 0).getTime();
+      return cB - cA; // newest created first if travel date unknown
+    }
+    if (isNaN(timeA)) return 1;
+    if (isNaN(timeB)) return -1;
+    return timeA - timeB;
+  });
+}
+
+// -------------------------------------------------------------
 // API Functions: Bookings (Sorted ASC by travelDate & pickupTime)
 // -------------------------------------------------------------
 export async function fetchBookings(): Promise<Booking[]> {
@@ -438,26 +549,34 @@ export async function fetchBookings(): Promise<Booking[]> {
         : Array.isArray(json.bookings)
         ? json.bookings
         : [];
-      // Sort ASC (earliest travelDate and pickupTime first)
-      return sortBookingsAscending(list);
+      const sorted = sortBookingsAscending(list);
+      // Cache fresh live bookings in localStorage to replace any old mock dummy data
+      setLocalItem("broomboom_bookings", sorted);
+      return sorted;
+    } else {
+      console.warn(`[fetchBookings] API returned status ${res.status}`);
     }
-  } catch {
-    // Backend offline; fallback to local storage
+  } catch (err) {
+    console.warn("[fetchBookings] Network request failed, using cached data:", err);
   }
 
   const local = getLocalItem<Booking[]>("broomboom_bookings", DEFAULT_BOOKINGS);
   return sortBookingsAscending(Array.isArray(local) ? local : DEFAULT_BOOKINGS);
 }
 
-export function sortBookingsAscending(bookings: Booking[]): Booking[] {
-  if (!Array.isArray(bookings)) return [];
-  return [...bookings].sort((a, b) => {
-    const dateA = new Date(`${a.travelDate}T${a.pickupTime || "00:00"}`).getTime();
-    const dateB = new Date(`${b.travelDate}T${b.pickupTime || "00:00"}`).getTime();
-    if (isNaN(dateA)) return 1;
-    if (isNaN(dateB)) return -1;
-    return dateA - dateB;
-  });
+export async function fetchBookingById(id: string): Promise<Booking | null> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/bookings/${id}`, { method: "GET" });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.data) return json.data;
+    }
+  } catch (err) {
+    console.warn(`[fetchBookingById] Failed for ${id}:`, err);
+  }
+
+  const all = await fetchBookings();
+  return all.find((b) => b.id === id || b.bookingId === id) || null;
 }
 
 export async function updateBookingStatus(
@@ -734,17 +853,21 @@ export async function fetchLeads(): Promise<Lead[]> {
     const res = await authFetch(`${API_BASE_URL}/api/leads`, { method: "GET" });
     if (res.ok) {
       const json = await res.json();
-      const list = Array.isArray(json)
+      const list: Lead[] = Array.isArray(json)
         ? json
         : Array.isArray(json.data)
         ? json.data
         : Array.isArray(json.leads)
         ? json.leads
         : [];
-      if (list.length > 0) return list;
+      // Cache fresh live leads in localStorage to replace any old mock dummy data
+      setLocalItem("broomboom_leads", list);
+      return list;
+    } else {
+      console.warn(`[fetchLeads] API returned status ${res.status}`);
     }
-  } catch {
-    // local fallback
+  } catch (err) {
+    console.warn("[fetchLeads] Network request failed, using cached data:", err);
   }
 
   const local = getLocalItem<Lead[]>("broomboom_leads", DEFAULT_LEADS);
