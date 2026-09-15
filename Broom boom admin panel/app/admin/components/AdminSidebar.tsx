@@ -12,7 +12,8 @@ import {
   X,
   ExternalLink,
   ShieldCheck,
-  Users
+  Users,
+  Briefcase,
 } from "lucide-react";
 import { removeAuthToken, getStoredAdminUser } from "../lib/api";
 import { useNotifications } from "../context/NotificationContext";
@@ -107,7 +108,7 @@ export default function AdminSidebar({
           <Link href="/admin" className="flex items-center gap-3 group">
             <div className="w-11 h-11 rounded-full overflow-hidden bg-amber-500 shrink-0 shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform flex items-center justify-center border-2 border-amber-400/40">
               <img
-                src="/logo.png"
+                src="/broomboom-logo.png"
                 alt="BroomBoom Cabs"
                 className="w-full h-full object-cover"
               />
@@ -197,6 +198,9 @@ export default function AdminSidebar({
             </div>
             <span className="text-[10px] text-slate-500 font-mono"></span>
           </a>
+
+          {/* Broomboom Franchise - Located directly below Customer Website */}
+         
         </div>
 
         {/* User Card & Logout */}
