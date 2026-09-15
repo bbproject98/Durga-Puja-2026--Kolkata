@@ -477,26 +477,10 @@ export function parseBookingDateTime(b: Booking): number {
   const dateStr = (b.travelDate || "").trim();
   const timeStr = (b.pickupTime || "00:00").trim();
 
-  // 1. If explicit ISO format YYYY-MM-DD
-  const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) {
-    const year = parseInt(isoMatch[1], 10);
-    const month = parseInt(isoMatch[2], 10) - 1;
-    const day = parseInt(isoMatch[3], 10);
-    let hours = 9;
-    let minutes = 0;
-    const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
-    if (timeMatch) {
-      hours = parseInt(timeMatch[1], 10);
-      minutes = parseInt(timeMatch[2], 10);
-      if (timeMatch[3]) {
-        const ampm = timeMatch[3].toUpperCase();
-        if (ampm === "PM" && hours < 12) hours += 12;
-        if (ampm === "AM" && hours === 12) hours = 0;
-      }
-    }
-    const d = new Date(year, month, day, hours, minutes);
-    if (!isNaN(d.getTime())) return d.getTime();
+  // 1. Try direct parse if standard ISO or standard date format
+  if (dateStr) {
+    const direct = new Date(`${dateStr} ${timeStr}`).getTime();
+    if (!isNaN(direct)) return direct;
   }
 
   // 2. Try regex extraction for text dates like "Oct 16 (Maha Saptami)"
@@ -507,9 +491,9 @@ export function parseBookingDateTime(b: Booking): number {
     const monthKey = monthMatch[1].toLowerCase();
     const monthIndex = MONTH_MAP[monthKey] ?? 9;
     const day = parseInt(monthMatch[2], 10);
-    const year = 2026; // Always 2026 festival year!
+    const year = 2026;
 
-    let hours = 9;
+    let hours = 0;
     let minutes = 0;
     const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
     if (timeMatch) {
@@ -534,16 +518,6 @@ export function parseBookingDateTime(b: Booking): number {
   return NaN;
 }
 
-export function sortBookingsNewestFirst(bookings: Booking[]): Booking[] {
-  if (!Array.isArray(bookings)) return [];
-  return [...bookings].sort((a, b) => {
-    const cA = new Date(a.createdAt || 0).getTime();
-    const cB = new Date(b.createdAt || 0).getTime();
-    if (!isNaN(cA) && !isNaN(cB)) return cB - cA;
-    return 0;
-  });
-}
-
 export function sortBookingsAscending(bookings: Booking[]): Booking[] {
   if (!Array.isArray(bookings)) return [];
   return [...bookings].sort((a, b) => {
@@ -560,96 +534,25 @@ export function sortBookingsAscending(bookings: Booking[]): Booking[] {
   });
 }
 
-export function mergeLeadsIntoBookings(bookings: Booking[], leads: Lead[]): Booking[] {
-  if (!Array.isArray(leads) || leads.length === 0) return bookings;
-  const merged = [...bookings];
-
-  leads.forEach((lead) => {
-    const isBookingLead =
-      lead.action === "book" ||
-      (lead.context && /package|pkg_|rental|outstation|tour|5hr|8hr|10hr|12hr/i.test(lead.context));
-
-    if (!isBookingLead) return;
-
-    const leadPhone = String(lead.phone || "").replace(/\D/g, "").slice(-10);
-    const cleanContext = (lead.context || "Durga Puja Festive Tour")
-      .replace(/^Rental Package:\s*/i, "")
-      .replace(/\(pkg_[a-z0-9_]+\)/i, "")
-      .trim();
-
-    // Check if this lead is already represented in merged bookings
-    const alreadyExists = merged.some((b) => {
-      const bPhone = String(b.customerPhone || "").replace(/\D/g, "").slice(-10);
-      if (bPhone && leadPhone && bPhone === leadPhone) {
-        const bPkg = (b.packageTitle || "").toLowerCase();
-        const lPkg = cleanContext.toLowerCase();
-        if (bPkg.includes(lPkg.slice(0, 8)) || lPkg.includes(bPkg.slice(0, 8))) {
-          const bTime = new Date(b.createdAt || 0).getTime();
-          const lTime = new Date(lead.createdAt || 0).getTime();
-          if (!isNaN(bTime) && !isNaN(lTime) && Math.abs(bTime - lTime) < 2 * 3600 * 1000) {
-            return true;
-          }
-        }
-      }
-      return false;
-    });
-
-    if (!alreadyExists) {
-      const lower = cleanContext.toLowerCase();
-      let fare = 4551;
-      if (lower.includes("5hr") || lower.includes("5 hour")) fare = 3299;
-      else if (lower.includes("8hr") || lower.includes("8 hour")) fare = 4551;
-      else if (lower.includes("10hr") || lower.includes("10 hour")) fare = 5499;
-      else if (lower.includes("12hr") || lower.includes("12 hour")) fare = 6051;
-      else if (lower.includes("midnight")) fare = 4999;
-      else if (lower.includes("5day") || lower.includes("5-day")) fare = 24999;
-
-      const syntheticBooking: Booking = {
-        id: `lead-b-${lead.id}`,
-        bookingId: `BBC-PUJA-${(lead.id || "").slice(-6).toUpperCase() || Math.floor(100000 + Math.random() * 900000)}`,
-        customerName: lead.name || "Guest Customer",
-        customerPhone: lead.phone,
-        customerEmail: lead.email || "",
-        vehicleName: "Sedan (4 Seater)",
-        vehicleModels: "Swift Dzire / Toyota Etios / Hyundai Aura",
-        vehicleSeats: 4,
-        packageTitle: cleanContext || "Durga Puja Festive Tour",
-        travelDate: "2026-10-16 (Maha Saptami)",
-        pickupTime: "09:00 AM",
-        returnDate: "Oct 16 (Same Night)",
-        returnTime: "11:30 PM",
-        pickupAddress: "Pickup coordination pending (Web Lead)",
-        totalTariff: fare,
-        advancePaid: 0,
-        balancePayable: fare,
-        status: lead.status === "CONVERTED" ? "CONFIRMED" : "PAYMENT_PENDING",
-        paymentStatus: "PENDING",
-        createdAt: lead.createdAt || new Date().toISOString(),
-        updatedAt: lead.createdAt || new Date().toISOString(),
-      };
-      merged.push(syntheticBooking);
-    }
-  });
-
-  return merged;
-}
-
 // -------------------------------------------------------------
 // API Functions: Bookings (Sorted ASC by travelDate & pickupTime)
 // -------------------------------------------------------------
 export async function fetchBookings(): Promise<Booking[]> {
-  let list: Booking[] = [];
   try {
     const res = await authFetch(`${API_BASE_URL}/api/bookings`, { method: "GET" });
     if (res.ok) {
       const json = await res.json();
-      list = Array.isArray(json)
+      const list: Booking[] = Array.isArray(json)
         ? json
         : Array.isArray(json.data)
         ? json.data
         : Array.isArray(json.bookings)
         ? json.bookings
         : [];
+      const sorted = sortBookingsAscending(list);
+      // Cache fresh live bookings in localStorage to replace any old mock dummy data
+      setLocalItem("broomboom_bookings", sorted);
+      return sorted;
     } else {
       console.warn(`[fetchBookings] API returned status ${res.status}`);
     }
@@ -657,22 +560,8 @@ export async function fetchBookings(): Promise<Booking[]> {
     console.warn("[fetchBookings] Network request failed, using cached data:", err);
   }
 
-  if (list.length === 0) {
-    const local = getLocalItem<Booking[]>("broomboom_bookings", DEFAULT_BOOKINGS);
-    list = Array.isArray(local) ? local : DEFAULT_BOOKINGS;
-  }
-
-  // Also seamlessly merge any package booking leads
-  try {
-    const leads = await fetchLeads().catch(() => []);
-    list = mergeLeadsIntoBookings(list, leads);
-  } catch {
-    // ignore
-  }
-
-  const sorted = sortBookingsNewestFirst(list);
-  setLocalItem("broomboom_bookings", sorted);
-  return sorted;
+  const local = getLocalItem<Booking[]>("broomboom_bookings", DEFAULT_BOOKINGS);
+  return sortBookingsAscending(Array.isArray(local) ? local : DEFAULT_BOOKINGS);
 }
 
 export async function fetchBookingById(id: string): Promise<Booking | null> {
@@ -1036,481 +925,4 @@ export async function updateBooking(id: string, data: Partial<Booking>): Promise
   updatedList[idx] = updatedBooking;
   setLocalItem("broomboom_bookings", updatedList);
   return updatedBooking;
-}
-
-// -------------------------------------------------------------
-// Franchise Leads Types & API Functions
-// -------------------------------------------------------------
-export type FranchiseStatus =
-  | "NEW"
-  | "CONTACTED"
-  | "UNDER_REVIEW"
-  | "MEETING_SCHEDULED"
-  | "AGREEMENT_SENT"
-  | "ONBOARDED"
-  | "REJECTED"
-  | string;
-
-export type FranchiseType =
-  | "City Master Franchise"
-  | "District Fleet Partner"
-  | "Unit Franchise Hub"
-  | "Single Car / Operator Partner"
-  | "Corporate Partner"
-  | string;
-
-export type InvestmentBudget =
-  | "₹2 - ₹5 Lakhs"
-  | "₹5 - ₹10 Lakhs"
-  | "₹10 - ₹25 Lakhs"
-  | "₹25 - ₹50 Lakhs"
-  | "₹50 Lakhs+"
-  | string;
-
-export interface FranchiseLead {
-  id: string;
-  leadId: string;
-  fullName: string;
-  phone: string;
-  email: string;
-  city: string;
-  state: string;
-  pincode?: string;
-  address?: string;
-  franchiseType: FranchiseType;
-  investmentBudget: InvestmentBudget;
-  currentFleetSize?: string;
-  hasCommercialOffice?: string;
-  businessExperience?: string;
-  preferredLaunchTimeline?: string;
-  status: FranchiseStatus;
-  priority?: "HIGH" | "MEDIUM" | "LOW" | string;
-  assignedTo?: string;
-  inquiryMessage?: string;
-  adminNotes?: string;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-export function normalizeFranchiseLead(raw: any): FranchiseLead {
-  if (!raw || typeof raw !== "object") {
-    return {
-      id: `fr-${Date.now()}`,
-      leadId: `BBC-FR-${Math.floor(100 + Math.random() * 900)}`,
-      fullName: "New Applicant",
-      phone: "",
-      email: "",
-      city: "Kolkata",
-      state: "West Bengal",
-      franchiseType: "District Fleet Partner",
-      investmentBudget: "Flexible",
-      status: "NEW",
-      createdAt: new Date().toISOString(),
-    };
-  }
-
-  const id = String(raw.id || raw._id || `fr-${Date.now()}`);
-  const leadId = String(raw.leadId || raw.applicationId || raw.appId || `BBC-FR-${id.slice(-4)}`);
-  const fullName = String(raw.fullName || raw.name || "Franchise Partner").trim();
-  const phone = String(raw.phone || raw.mobile || raw.alternatePhone || "").trim();
-  const email = String(raw.email || "").trim();
-  const city = String(raw.city || "Kolkata").trim();
-  const state = String(raw.state || "West Bengal").trim();
-  const pincode = raw.pincode ? String(raw.pincode).trim() : undefined;
-  const address = raw.address || raw.proposedAddress ? String(raw.address || raw.proposedAddress).trim() : undefined;
-
-  let franchiseType = raw.franchiseType;
-  if (!franchiseType) {
-    if (raw.packageName) franchiseType = raw.packageName;
-    else if (raw.preferredPackage) {
-      const p = String(raw.preferredPackage).toLowerCase();
-      if (p.includes("plat")) franchiseType = "Platinum Partner (Regional Master Franchise)";
-      else if (p.includes("gold")) franchiseType = "Gold Partner (District Exclusive Hub)";
-      else if (p.includes("silver")) franchiseType = "Silver Partner (Booking Kiosk)";
-      else franchiseType = `${p.toUpperCase()} Partner`;
-    } else {
-      franchiseType = "District Fleet Partner";
-    }
-  }
-
-  const investmentBudget = String(raw.investmentBudget || "Flexible").trim();
-  const currentFleetSize = raw.currentFleetSize || (raw.hasExperience ? "Experienced Fleet Operator" : "None (New Entrepreneur)");
-  const hasCommercialOffice = raw.hasCommercialOffice || raw.spaceStatus || (raw.carpetArea ? `${raw.carpetArea} Commercial Space` : "Planned");
-  const businessExperience = raw.businessExperience || raw.hasExperience || raw.currentProfession || "";
-  const preferredLaunchTimeline = raw.preferredLaunchTimeline || "Within 1 Month";
-
-  const rawStatus = String(raw.status || "NEW").toUpperCase();
-  const status = rawStatus === "APPROVED" ? "ONBOARDED" : rawStatus === "PENDING" ? "UNDER_REVIEW" : rawStatus;
-  const priority = String(raw.priority || (status === "NEW" ? "HIGH" : "MEDIUM")).toUpperCase();
-  const assignedTo = raw.assignedTo || "Franchise Desk";
-  const inquiryMessage = raw.inquiryMessage || raw.message || "";
-  const adminNotes = raw.adminNotes || "";
-  const createdAt = raw.createdAt || new Date().toISOString();
-  const updatedAt = raw.updatedAt || raw.createdAt || new Date().toISOString();
-
-  return {
-    id,
-    leadId,
-    fullName,
-    phone,
-    email,
-    city,
-    state,
-    pincode,
-    address,
-    franchiseType,
-    investmentBudget,
-    currentFleetSize,
-    hasCommercialOffice,
-    businessExperience,
-    preferredLaunchTimeline,
-    status,
-    priority,
-    assignedTo,
-    inquiryMessage,
-    adminNotes,
-    createdAt,
-    updatedAt,
-  };
-}
-
-export const DEFAULT_FRANCHISE_LEADS: FranchiseLead[] = [
-  {
-    id: "lead-1789105907910",
-    leadId: "BB-2026-1011",
-    fullName: "Partha Sarkar",
-    phone: "08583992978",
-    email: "sakarpartha222@gmail.com",
-    city: "Singur",
-    state: "West Bengal",
-    pincode: "712124",
-    address: "Singur Market, Hooghly District, WB",
-    franchiseType: "Gold Partner (District Exclusive Hub)",
-    investmentBudget: "₹5.0 Lakhs - ₹10.0 Lakhs",
-    currentFleetSize: "3 - 5 Vehicles",
-    hasCommercialOffice: "Owned commercial space ready (300 - 500 sq.ft)",
-    businessExperience: "Currently in travel / taxi / logistics services.",
-    preferredLaunchTimeline: "Immediate (Within 15 days)",
-    status: "NEW",
-    priority: "HIGH",
-    assignedTo: "Franchise Desk",
-    inquiryMessage: "Exclusive franchise application for Singur and Hooghly district travel network.",
-    adminNotes: "Application submitted via online portal. Ready for territory manager call.",
-    createdAt: "2026-09-11T05:51:47.910Z",
-    updatedAt: "2026-09-11T05:51:47.910Z",
-  },
-  {
-    id: "lead-1789072693291",
-    leadId: "BB-2026-1006",
-    fullName: "Amitabh Sen Sharma",
-    phone: "+91 98300 12345",
-    email: "amitabh.sen@kolkata-travels.com",
-    city: "Kolkata",
-    state: "West Bengal",
-    pincode: "700029",
-    address: "Southern Avenue Main Road, Near Lake Stadium, Kolkata",
-    franchiseType: "Gold Partner (District Exclusive Hub)",
-    investmentBudget: "₹5.0 Lakhs - ₹10.0 Lakhs",
-    currentFleetSize: "6 - 15 Vehicles",
-    hasCommercialOffice: "Owned commercial space ready (350 sq.ft)",
-    businessExperience: "Fleet & Logistics Operator with 10+ commercial cabs.",
-    preferredLaunchTimeline: "Within 1 Month",
-    status: "UNDER_REVIEW",
-    priority: "HIGH",
-    assignedTo: "Territory Lead Kolkata",
-    inquiryMessage: "Requesting district exclusive territory for South Kolkata.",
-    adminNotes: "Discussion held on Tuesday. Territory agreement draft prepared.",
-    createdAt: "2026-09-10T20:38:13.291Z",
-    updatedAt: "2026-09-12T14:10:00.000Z",
-  },
-  {
-    id: "lead-init-1",
-    leadId: "BB-2026-1001",
-    fullName: "Rohan Agrawal",
-    phone: "+91 98310 54321",
-    email: "rohan.agrawal@gmail.com",
-    city: "Kolkata",
-    state: "West Bengal",
-    pincode: "700019",
-    address: "Ballygunge Circular Road, South Kolkata",
-    franchiseType: "Platinum Partner (Regional Master Franchise)",
-    investmentBudget: "₹15L - ₹20L",
-    currentFleetSize: "15+ Vehicles",
-    hasCommercialOffice: "Commercial property owned (450 sq.ft)",
-    businessExperience: "Logistics & Corporate Fleet Business Owner.",
-    preferredLaunchTimeline: "Immediate (Within 15 days)",
-    status: "ONBOARDED",
-    priority: "HIGH",
-    assignedTo: "Executive Director - Franchise",
-    inquiryMessage: "Looking to take master franchise rights for South 24 Parganas district.",
-    adminNotes: "Territory agreement signed. Chauffeur onboarding scheduled.",
-    createdAt: "2026-03-01T08:30:00.000Z",
-    updatedAt: "2026-09-10T16:00:00.000Z",
-  },
-  {
-    id: "lead-1789105805954",
-    leadId: "BB-2026-1010",
-    fullName: "Priyanka Roy",
-    phone: "+91 98300 12345",
-    email: "priyanka.roy@example.com",
-    city: "Kolkata",
-    state: "West Bengal",
-    pincode: "700032",
-    address: "Jadavpur Central Road, Kolkata",
-    franchiseType: "Gold Partner (District Exclusive Hub)",
-    investmentBudget: "₹5.0 Lakhs - ₹10.0 Lakhs",
-    currentFleetSize: "1 - 5 Vehicles",
-    hasCommercialOffice: "Planned",
-    businessExperience: "Travel consultant with 4 years corporate booking experience.",
-    preferredLaunchTimeline: "Within 1 Month",
-    status: "CONTACTED",
-    priority: "MEDIUM",
-    assignedTo: "Franchise Desk",
-    inquiryMessage: "Require bank loan assistance for franchise setup.",
-    adminNotes: "Connected with banking partner desk for loan pre-assessment.",
-    createdAt: "2026-09-11T05:50:05.954Z",
-    updatedAt: "2026-09-12T11:30:00.000Z",
-  },
-  {
-    id: "lead-1789045261129",
-    leadId: "BB-2026-1004",
-    fullName: "Siddharth Mukherjee",
-    phone: "+91 98319 87654",
-    email: "siddharth.m@gmail.com",
-    city: "Kolkata",
-    state: "West Bengal",
-    pincode: "700053",
-    address: "New Alipore Block C, Kolkata",
-    franchiseType: "Gold Partner (District Exclusive Hub)",
-    investmentBudget: "₹5 Lakhs - ₹10 Lakhs",
-    currentFleetSize: "1 - 5 Vehicles",
-    hasCommercialOffice: "400 sq.ft prime commercial office ready",
-    businessExperience: "Owns 4 commercial tourist vehicles.",
-    preferredLaunchTimeline: "Within 1 Month",
-    status: "MEETING_SCHEDULED",
-    priority: "HIGH",
-    assignedTo: "Kolkata Operations Desk",
-    inquiryMessage: "Wants to operate South-West Kolkata and Diamond Harbour route franchise.",
-    adminNotes: "Meeting scheduled for Friday at Kolkata regional office.",
-    createdAt: "2026-09-10T13:01:01.129Z",
-    updatedAt: "2026-09-13T10:00:00.000Z",
-  },
-  {
-    id: "fr-102",
-    leadId: "BBC-FR-102",
-    fullName: "Rajesh Kumar Agarwal",
-    phone: "+91 97480 88231",
-    email: "rajesh.agarwal@siliguritravels.in",
-    city: "Siliguri",
-    state: "West Bengal",
-    pincode: "734001",
-    address: "Hill Cart Road, Near Sevoke More, Siliguri",
-    franchiseType: "District Fleet Partner",
-    investmentBudget: "₹10 - ₹25 Lakhs",
-    currentFleetSize: "6 - 15 Vehicles",
-    hasCommercialOffice: "Yes (Roadside commercial front)",
-    businessExperience: "8 years operating Darjeeling & Sikkim tourist cabs.",
-    preferredLaunchTimeline: "Within 1 Month",
-    status: "UNDER_REVIEW",
-    priority: "HIGH",
-    assignedTo: "North Bengal Regional Head",
-    inquiryMessage: "Seeking franchise for Siliguri corridor connecting Bagdogra airport, Darjeeling, and Dooars routes.",
-    adminNotes: "Requested airport counter allocation details and rate card integration.",
-    createdAt: "2026-09-09T14:15:00.000Z",
-    updatedAt: "2026-09-11T16:00:00.000Z",
-  },
-  {
-    id: "fr-103",
-    leadId: "BBC-FR-103",
-    fullName: "Tanmoy Mukherjee",
-    phone: "+91 94340 71205",
-    email: "tanmoy.m@rediffmail.com",
-    city: "Durgapur",
-    state: "West Bengal",
-    pincode: "713216",
-    address: "City Centre, Opp. Junction Mall, Durgapur",
-    franchiseType: "Unit Franchise Hub",
-    investmentBudget: "₹5 - ₹10 Lakhs",
-    currentFleetSize: "1 - 5 Vehicles",
-    hasCommercialOffice: "Planned",
-    businessExperience: "Owns 3 commercial Innovas doing industrial contracts with SAIL & DSP.",
-    preferredLaunchTimeline: "Within 1 Month",
-    status: "CONTACTED",
-    priority: "MEDIUM",
-    assignedTo: "Franchise Desk",
-    inquiryMessage: "Want to launch Broomboom Cabs franchise for Durgapur-Asansol industrial belt.",
-    adminNotes: "Call conducted. Sent standard franchise presentation brochure and royalty sheet.",
-    createdAt: "2026-09-10T09:40:00.000Z",
-    updatedAt: "2026-09-11T11:00:00.000Z",
-  },
-  {
-    id: "fr-104",
-    leadId: "BBC-FR-104",
-    fullName: "Subrata Mondal",
-    phone: "+91 98315 22910",
-    email: "subrata.howrahfleet@gmail.com",
-    city: "Howrah",
-    state: "West Bengal",
-    pincode: "711101",
-    address: "Station Road, Kona Expressway Hub, Howrah",
-    franchiseType: "District Fleet Partner",
-    investmentBudget: "₹10 - ₹25 Lakhs",
-    currentFleetSize: "6 - 15 Vehicles",
-    hasCommercialOffice: "Yes",
-    businessExperience: "10 years in interstate taxi transport and railway station pre-paid operations.",
-    preferredLaunchTimeline: "Immediate (Within 15 days)",
-    status: "ONBOARDED",
-    priority: "HIGH",
-    assignedTo: "Operations Lead",
-    inquiryMessage: "Franchise agreement finalized for Howrah Railway Station hub and West Bengal highway connections.",
-    adminNotes: "Franchise fee deposited. Chauffeur training scheduled for 18th Sept.",
-    createdAt: "2026-09-02T11:00:00.000Z",
-    updatedAt: "2026-09-13T18:30:00.000Z",
-  },
-  {
-    id: "lead-init-3",
-    leadId: "BB-2026-1003",
-    fullName: "Priya Chauhan",
-    phone: "+91 98290 11223",
-    email: "priya.chauhan@outlook.com",
-    city: "Jaipur",
-    state: "Rajasthan",
-    pincode: "302004",
-    address: "Raja Park Main Market, Jaipur",
-    franchiseType: "Silver Partner (Booking Kiosk)",
-    investmentBudget: "₹2 - ₹5 Lakhs",
-    currentFleetSize: "None (New Entrepreneur)",
-    hasCommercialOffice: "Renting in prime retail spot (150 sq.ft)",
-    businessExperience: "Over 6 years in tour & travels agency.",
-    preferredLaunchTimeline: "Within 1 Month",
-    status: "NEW",
-    priority: "LOW",
-    assignedTo: "Franchise Desk",
-    inquiryMessage: "Interested in adding BroomBoom cab booking kiosk to existing travel desk.",
-    adminNotes: "Inquiry received. Assigned territory manager for video call.",
-    createdAt: "2026-09-08T15:20:00.000Z",
-    updatedAt: "2026-09-08T15:20:00.000Z",
-  }
-];
-
-export async function fetchFranchiseLeads(): Promise<FranchiseLead[]> {
-  try {
-    const res = await authFetch(`${API_BASE_URL}/api/franchise-leads`, { method: "GET" });
-    if (res.ok) {
-      const json = await res.json();
-      const rawList = Array.isArray(json)
-        ? json
-        : Array.isArray(json.data)
-        ? json.data
-        : Array.isArray(json.leads)
-        ? json.leads
-        : [];
-      if (rawList.length > 0) {
-        const normalized = rawList.map(normalizeFranchiseLead);
-        setLocalItem("broomboom_franchise_leads", normalized);
-        return normalized;
-      }
-    }
-  } catch (err) {
-    console.warn("[fetchFranchiseLeads] Remote fetch failed, using local cache:", err);
-  }
-
-  const local = getLocalItem<any[]>("broomboom_franchise_leads", DEFAULT_FRANCHISE_LEADS);
-  const safeList = Array.isArray(local) && local.length > 0 ? local : DEFAULT_FRANCHISE_LEADS;
-  return safeList.map(normalizeFranchiseLead);
-}
-
-export async function fetchFranchiseLeadById(id: string): Promise<FranchiseLead | null> {
-  const all = await fetchFranchiseLeads();
-  return all.find((l) => l.id === id || l.leadId === id) || null;
-}
-
-export async function saveFranchiseLead(leadData: Partial<FranchiseLead>): Promise<FranchiseLead> {
-  const isNew = !leadData.id;
-  const id = leadData.id || `fr-${Date.now()}`;
-  const leadId = leadData.leadId || `BBC-FR-${Math.floor(100 + Math.random() * 900)}`;
-
-  const lead: FranchiseLead = normalizeFranchiseLead({
-    ...leadData,
-    id,
-    leadId,
-    updatedAt: new Date().toISOString(),
-  });
-
-  try {
-    const method = isNew ? "POST" : "PUT";
-    const url = isNew
-      ? `${API_BASE_URL}/api/franchise-leads`
-      : `${API_BASE_URL}/api/franchise-leads/${id}`;
-
-    const res = await authFetch(url, {
-      method,
-      body: JSON.stringify(lead),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.data) return normalizeFranchiseLead(json.data);
-    }
-  } catch {
-    // local fallback
-  }
-
-  const list = await fetchFranchiseLeads();
-  let updated: FranchiseLead[];
-  const idx = list.findIndex((l) => l.id === id || l.leadId === id);
-  if (idx >= 0) {
-    updated = [...list];
-    updated[idx] = { ...list[idx], ...lead, updatedAt: new Date().toISOString() };
-  } else {
-    updated = [lead, ...list];
-  }
-  setLocalItem("broomboom_franchise_leads", updated);
-  return lead;
-}
-
-export async function updateFranchiseLead(id: string, data: Partial<FranchiseLead>): Promise<FranchiseLead> {
-  try {
-    const res = await authFetch(`${API_BASE_URL}/api/franchise-leads/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.data) return normalizeFranchiseLead(json.data);
-    }
-  } catch {
-    // local fallback
-  }
-
-  const list = await fetchFranchiseLeads();
-  const idx = list.findIndex((l) => l.id === id || l.leadId === id);
-  if (idx === -1) throw new Error("Franchise lead not found");
-
-  const updatedLead: FranchiseLead = normalizeFranchiseLead({
-    ...list[idx],
-    ...data,
-    updatedAt: new Date().toISOString(),
-  });
-  const updatedList = [...list];
-  updatedList[idx] = updatedLead;
-  setLocalItem("broomboom_franchise_leads", updatedList);
-  return updatedLead;
-}
-
-export async function updateFranchiseLeadStatus(id: string, status: string): Promise<FranchiseLead> {
-  return updateFranchiseLead(id, { status });
-}
-
-export async function deleteFranchiseLead(id: string): Promise<void> {
-  try {
-    await authFetch(`${API_BASE_URL}/api/franchise-leads/${id}`, {
-      method: "DELETE",
-    });
-  } catch {
-    // local fallback
-  }
-
-  const list = await fetchFranchiseLeads();
-  const filtered = list.filter((l) => l.id !== id && l.leadId !== id);
-  setLocalItem("broomboom_franchise_leads", filtered);
 }
